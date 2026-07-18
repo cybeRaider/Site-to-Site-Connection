@@ -15,8 +15,8 @@ This repository documents the architecture and implementation of a secure, segme
 To mirror enterprise best practices, the Ubuntu Server utilizes a dedicated virtual loopback/dummy interface ("dummy0"). This ensures that home network traffic remains fully isolated and only explicit, segmented traffic passes through the encrypted tunnel.
 
 Ubuntu Server -> (Lab WAN: 192.168.X.X)
-  - dummy interface -> [Subnet: 10.X.X.0/24] and IP Interface: dummy0 (10.X.X.1)                   
+  - dummy interface -> [Subnet: 10.X.X.X] and IP Interface: dummy0 (10.X.X.X)                   
   
-pfSense Firewall -> [WAN Interface: 192.168.X.X], [DMZ Interface: 172.16.X.1], [LAN Subnet: 192.168.X.0/24] 
+pfSense Firewall -> [WAN Interface: 192.168.X.X], [DMZ Interface: 172.16.X.X], [LAN Subnet: 192.168.X.X] 
   
 IPsec Connection is between the dummy interface and Ubuntu Desktop VM in LAN interface of pfsense.                                                         
