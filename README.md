@@ -1,10 +1,7 @@
 # Enterprise-Grade Site-to-Site IKEv2 IPsec VPN & Monitoring Lab
 
 ## Overview
-This repository documents the architecture and implementation of a secure, segmented Site-to-Site IKEv2 IPsec VPN tunnel established between an Ubuntu Server 24.04 endpoint that is etsablsihed on Raspberry Pi(running StrongSwan) and a pfSense Firewall appliance. 
-
-Designed as a professional portfolio piece, this project demonstrates advanced networking concepts including a custom OpenSSL-based PKI for mutual RSA authentication, advanced firewall design, and virtual network segmentation. 
-Additionally, the infrastructure is integrated with a Zabbix Server deployment for active telemetry and node monitoring.
+This repository documents the architecture and implementation of a secure, segmented Site-to-Site IKEv2 IPsec VPN tunnel established between an Ubuntu Server 24.04 endpoint that is etsablsihed on Raspberry Pi (running StrongSwan) and a pfSense Firewall appliance. 
 
 ## Core Technologies & Tools
 - Operating Systems: Ubuntu Server 24.04 LTS, pfSense CE, Ubuntu Desktop (LAN Client)
@@ -22,4 +19,4 @@ Ubuntu Server -> (Lab WAN: 192.168.X.X)
   
 pfSense Firewall -> [WAN Interface: 192.168.X.X], [DMZ Interface: 172.16.X.1], [LAN Subnet: 192.168.X.0/24] 
   
-IPsec Connection is between the dummy interface and Ubuntu Linux VM in LAN interface of pfsense                                                           
+IPsec Connection is between the dummy interface and Ubuntu Desktop VM in LAN interface of pfsense.                                                         
