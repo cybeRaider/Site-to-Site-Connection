@@ -25,7 +25,7 @@ Ubuntu DMZ Server (Zabbix server) -> role: Monitoring server — data collection
 
 Network adapters:
 
-Adapter 1: VMnet2 (DMZ) — 172.16.X.X/24, gateway 172.16.X.X and Adapter 2: VMnet8 (Management) — 192.168.X.X/24 (no gateway)
+Adapter 1: VMnet2 (host-only) — 172.16.X.X/24, gateway 172.16.X.X and Adapter 2: VMnet8 (NAT for Management) — 192.168.X.X/24 (no gateway)
 
 The monitoring server needs to reach every zone to collect data. From DMZ it can initiate connections to LAN hosts (agent polling), to pfSense (SNMP queries), and to WAN (internet health checks). It can also receive inbound connections from the Raspberry Pi via pfSense port forward.
 The second adapter on VMnet8 provides a direct management path from the host machine that bypasses pfSense entirely. This is essential during lab configuration — when pfSense rules are being adjusted and might break connectivity, SSH access via VMnet8 still works.
