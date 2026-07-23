@@ -36,3 +36,19 @@ Zabbix Server 7.0
 MariaDB 10.x (metrics database)
 Apache 2.4 (web frontend)
 Zabbix Agent (self-monitoring)
+
+Linux VM -> role: Internal LAN host represents typical enterprise workstation
+
+Network adapters:
+
+Adapter 1: VMnet1 (LAN) — 192.168.X.X/24, gateway 192.168.X.X
+
+Monitoring: Zabbix Agent 2 installed, reporting to 172.16.X.X
+
+It represents a real internal host that Zabbix monitors via agent. Demonstrates LAN-to-DMZ agent communication through pfSense firewall rules. Also serves as the test point for LAN-zone monitoring.
+
+Raspberry Pi -> role: External node on home LAN represents a device outside pfSense. It's connected to home router LAN — 192.168.X.X
+
+Monitoring: ICMP only (Zabbix agent not available for ARM64 on Ubuntu 24.04)
+
+The Pi sits outside pfSense on the home network, which means monitoring it requires traffic to traverse pfSense WAN. This tests whether pfSense is correctly port forwarding inbound connections and makes the external LAN zone visible in the monitoring system.
