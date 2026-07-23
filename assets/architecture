@@ -1,0 +1,11 @@
+Lab Architecture
+
+Overview
+This lab builds a network monitoring system that mirrors how enterprise infrastructure monitoring is designed with a dedicated monitoring zone, segmented networks, and zone-path awareness rather than just device-level monitoring.
+
+The core design principle: monitor paths and zones, not just devices.
+
+Physical layout
+
+Everything runs as virtual machines on a single Windows host running VMware Workstation. The VMs are connected through VMware virtual networks (VMnets) that simulate real physical network segments.
+
