@@ -18,8 +18,7 @@ openssl req -new -x509 -days 3650 \
     -subj "/CN=VPN-Lab-CA"
 
 # We generate a separate key for the server, a certificate signing request for the server and an extension file. Then the CA sign a certificate for the server. 
-# A CSR contains public key info and identity details that a CA signs. The --san (Subject Alternative Name) field is critical, it must match the IP/hostname the client connects to, otherwise the handshake will fail. 
-# The serverAuth flag tells the certificate it's allowed to authenticate a server.
+# A CSR contains public key info and identity details that a CA signs.
 
 To generate server key and cert that is signed by CA: openssl genrsa -out ~/pki/private/server-key.pem 4096
 openssl req -new \
@@ -35,15 +34,26 @@ openssl req -new \
 
 We create a v3 extension file for the server cert that containing X.509 v3 extensions required for secure IPsec/IKEv2 connections:. We need to explicitly define the extensions in a file:
 
-cat > ~/pki/server-ext.cnf <<EOF
+cat > ~/pki/server.cnf << EOF
+[req]
+default_bits = 4096
+prompt = no
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+CN = 192.168.X.X
+
 [v3_req]
-subjectAltName = IP:<SERVER_IP_OR_HOSTNAME>
+subjectAltName = IP:192.168.X.X
 extendedKeyUsage = serverAuth
 keyUsage = digitalSignature, keyEncipherment
 EOF
 
-# digitalSignature: allows the key to generate signatures (used during IKE negotiation to prove identity).
-# keyEncipherment: allows the key to encrypt symmetric session keys (used during transport key exchanges).
+# digitalSignature: allows the key to generate signatures (used during IKE negotiation to prove identity)
+# keyEncipherment: allows the key to encrypt symmetric session keys (used during transport key exchanges)
+# The --san (Subject Alternative Name) field is critical, it must match the IP/hostname the client connects to, otherwise the handshake will fail. 
+# The serverAuth flag tells the certificate it's allowed to authenticate a server.
 
 Sign the server cert with the CA:
 
