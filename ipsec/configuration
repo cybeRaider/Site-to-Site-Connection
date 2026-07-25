@@ -90,7 +90,7 @@ conn ikev2-vpn -> defines one tunnel profile
 
     # Server (left) side
     left=%any
-    leftid=@<SERVER_IP_OR_HOSTNAME>
+    leftid=@<SERVER_IP_OR_HOSTNAME> -> the identity the server presents, must match the cert's CN/SAN
     leftcert=server-cert.pem
     leftsendcert=always
     leftsubnet=0.0.0.0/0
@@ -98,7 +98,7 @@ conn ikev2-vpn -> defines one tunnel profile
     # Client (right) side
     right=%any
     rightid=%any
-    rightauth=eap-mschapv2
+    rightauth=eap-mschapv2 -> clients authenticate with username/password using EAP
     rightsourceip=10.X.X.X/X    # VPN IP pool for clients
     rightdns=8.8.8.8,8.8.4.4
     rightsendcert=never
@@ -107,22 +107,24 @@ conn ikev2-vpn -> defines one tunnel profile
 
 5) we configure the /etc/ipsec.secrets using again the nano text editor: sudo nano /etc/ipsec.secrets
 # RSA private key for server auth
-: RSA "server-key.pem"
+: RSA "server-key.pem" -> tells StrongSwan to use this private key to prove the server's identity during the IKE handshake
   
 # VPN user credentials (EAP)
-vpnuser : EAP "type whatever password you want"
+vpnuser : EAP "type whatever password you want" -> the username/password pair that the client will authenticate with
 
 6) we enable IP Forwarding by editing the sysctl file: sudo nano /etc/sysctl.conf
 
+# By default, Linux drops packets that aren't destined for itself. Since the VPN server needs to forward traffic from VPN clients to the rest of the network (and back), we need to enable this at the kernel level.
+
 Uncomment or add:
 
-net.ipv4.ip_forward = 1
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
+net.ipv4.ip_forward = 1 -> allows the kernel to route packets between interfaces
+net.ipv4.conf.all.accept_redirects = 0 -> disables ICMP redirects from other routers or hosts on the network, which can interfere with VPN routing
+net.ipv4.conf.all.send_redirects = 0 -> -> stops the server from emitting outgoing ICMP Redirect messages to connected clients
 
-Apply: sudo sysctl -p
+We apply them using the command: sudo sysctl -p
   
-7) we configure UFW / iptables
+7) we configure UFW / iptables to open the ports that used for the IPsec
 
 If using UFW:
 
@@ -133,19 +135,19 @@ sudo ufw allow OpenSSH
 Also we add NAT rules before the *filter block in /etc/ufw/before.rules:
 
 *nat
--A POSTROUTING -s 10.X.X.X/X -o <WAN_INTERFACE> -m policy --pol ipsec --dir out -j ACCEPT
--A POSTROUTING -s 10.X.X.X/X -o <WAN_INTERFACE> -j MASQUERADE
+-A POSTROUTING -s 10.X.X.X/X -o <WAN_INTERFACE> -m policy --pol ipsec --dir out -j ACCEPT -> tells iptables to bypass NAT for traffic that matches an active IPsec policy. This ensures encrypted IPsec tunnel traffic (like site-to-site traffic) retains its original IP headers so the remote endpoint can properly match and decrypt it.
+-A POSTROUTING -s 10.X.X.X/X -o <WAN_INTERFACE> -j MASQUERADE -> translates the private VPN IP addresses (10.X.X.X/X) into the server’s public WAN IP for all other outgoing traffic. This allows roadwarrior VPN clients to browse the public internet through your server.
 COMMIT
 
 *mangle
--A FORWARD --match policy --pol ipsec --dir in -s 10.X.X.X/X -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360
+-A FORWARD --match policy --pol ipsec --dir in -s 10.X.X.X/X -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360 -> this rule inspects outgoing TCP SYN packets and forcibly clamps the Maximum Segment Size (MSS) down to 1360 bytes. This leaves enough headroom for IPsec headers, preventing web pages from hanging or failing to load.
 COMMIT
 
 Replace <WAN_INTERFACE> with your actual interface (e.g. ens33, eth0).
 
 Also in /etc/default/ufw set:
 
-DEFAULT_FORWARD_POLICY="ACCEPT"
+DEFAULT_FORWARD_POLICY="ACCEPT" -> by default, UFW drops all forwarded traffic (packets passing through the server from one interface to another). Changing this to ACCEPT tells UFW's filter table to allow the kernel to pass traffic between your virtual IPsec interfaces and your physical network interface.
 
 Then we enable the rules: sudo ufw disable && sudo ufw enable
 
