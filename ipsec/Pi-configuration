@@ -29,8 +29,8 @@ Name=dummy0
 Address=10.X.X.1/24
 
 # enable the service 
-sudo systemctl enable --now systemd-networkd
-sudo systemctl restart systemd-networkd
+sudo systemctl enable --now systemd-networkd -> Starts the netword daemon
+sudo systemctl restart systemd-networkd -> enables it to start automatically on boot
 
 3) Generation of PKI (self-signed CA and self-sgned cert)
 This is where we build our own mini Certificate Authority for the VPN. IPsec with IKEv2 relies on certificates to prove identity.
@@ -186,8 +186,8 @@ DEFAULT_FORWARD_POLICY="ACCEPT" -> by default, UFW drops all forwarded traffic (
 
 Then we enable the rules: sudo ufw disable && sudo ufw enable
 
-9) we start & enable StrongSwan using the commands: sudo systemctl enable --now strongswan-starter
-To restart we use the command: sudo systemctl restart strongswan-starter and to verify the status we the command sudo systemctl status strongswan-starter
+9) we start the StrongSwan daemon using the command: sudo systemctl enable --now strongswan-starter
+We enable the daemon  to start automatically on boot using the command: sudo systemctl restart strongswan-starter and to verify the status we use the command sudo systemctl status strongswan-starter
 
 10) verification commands of IPsec tunnel
 sudo ipsec status         # Check loaded connections
