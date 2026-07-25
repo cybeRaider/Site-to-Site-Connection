@@ -1,0 +1,157 @@
+Steps for creation and configuration of the IPsec tunnel
+
+1) we update our repositories: sudo apt update
+Then we install StrongSwan using the commands: sudo apt install strongswan strongswan-starter libcharon-extra-plugins libcharon-extauth-plugins -y
+The "libcharon-extra-plugins" adds support for extra auth methods and cipher suites where the "libcharon-extauth-plugins" specifically adds EAP auth support (needed for username/password login)
+
+2) Generation of PKI (self-signed CA and self-sgned cert)
+This is where we build our own mini Certificate Authority for the VPN. IPsec with IKEv2 relies on certificates to prove identity.
+
+First we need to create directories for our CA, certs, and private keys and then change the permissions so we can have only us permissions and no one else: mkdir -p ~/pki/{ca,certs,private} and then we type chmod 700 ~/pki
+
+# We generate a private key for the CA, then self-sign a certificate for it. This CA is the "root of trust", which means that both sides will trust anything signed by it.
+
+To generate the CA key and self-signed cert we use the commands: openssl genrsa -out ~/pki/private/ca-key.pem 4096
+openssl req -new -x509 -days 3650 \
+    -key ~/pki/private/ca-key.pem \
+    -out ~/pki/ca/ca-cert.pem \
+    -subj "/CN=VPN-Lab-CA"
+
+# We generate a separate key for the server, a certificate signing request for the server and an extension file. Then the CA sign a certificate for the server. 
+# A CSR contains public key info and identity details that a CA signs. The --san (Subject Alternative Name) field is critical, it must match the IP/hostname the client connects to, otherwise the handshake will fail. 
+# The serverAuth flag tells the certificate it's allowed to authenticate a server.
+
+To generate server key and cert that is signed by CA: openssl genrsa -out ~/pki/private/server-key.pem 4096
+openssl req -new \
+    -key ~/pki/private/server-key.pem \
+    -out ~/pki/private/server.csr \
+    -subj "/CN=<SERVER_IP_OR_HOSTNAME>"
+
+# Server CSR (Certificate Signing Request)
+openssl req -new \
+    -key ~/pki/private/server-key.pem \
+    -out ~/pki/private/server.csr \
+    -subj "/CN=<SERVER_IP_OR_HOSTNAME>"
+
+We create a v3 extension file for the server cert that containing X.509 v3 extensions required for secure IPsec/IKEv2 connections:. We need to explicitly define the extensions in a file:
+
+cat > ~/pki/server-ext.cnf <<EOF
+[v3_req]
+subjectAltName = IP:<SERVER_IP_OR_HOSTNAME>
+extendedKeyUsage = serverAuth
+keyUsage = digitalSignature, keyEncipherment
+EOF
+
+# digitalSignature: allows the key to generate signatures (used during IKE negotiation to prove identity).
+# keyEncipherment: allows the key to encrypt symmetric session keys (used during transport key exchanges).
+
+Sign the server cert with the CA:
+
+openssl x509 -req -days 1825 \ -> invokes OpenSSL's X.509 certificate handling utility, which is used here to transform and sign certificate requests and tells OpenSSL that the input file is a CSR rather than an existing certificate
+    -in ~/pki/private/server.csr \
+    -CA ~/pki/ca/ca-cert.pem \
+    -CAkey ~/pki/private/ca-key.pem \
+    -CAcreateserial \ -> instructs OpenSSL to create a serial number file (ca-cert.srl) if it doesn't already exist. Every certificate issued by a CA must have a unique serial number
+    -out ~/pki/certs/server-cert.pem \
+    -extensions v3_req \ -> tells OpenSSL which section header inside your configuration file to pull extensions from (in this case, the [v3_req] block).
+    -extfile ~/pki/server-ext.cnf -> passes the configuration file containing your extra X.509 v3 extension flags (Subject Alternative Name, Extended Key Usage, Key Usage).
+
+We verify that the cert looks correct: openssl x509 -in ~/pki/certs/server-cert.pem -text -noout | grep -A2 "Subject Alternative\|Extended Key" -> we should see our IP/hostname in the SAN and TLS Web Server Authentication in the EKU.
+  
+3) StrongSwan reads from specific directories under /etc/ipsec.d/
+
+To install the Certs into StrongSwan we need to copy and paste them on specific folder: sudo cp ~/pki/ca/ca-cert.pem /etc/ipsec.d/cacerts/ 
+sudo cp ~/pki/certs/server-cert.pem /etc/ipsec.d/certs/
+sudo cp ~/pki/private/server-key.pem /etc/ipsec.d/private/ 
+
+4) Tunnel configuration
+
+We configure the file /etc/ipsec.conf using the nano text editor: sudo nano /etc/ipsec.conf
+
+config setup
+    charondebug="ike 1, knl 1, cfg 0"
+    uniqueids=no -> allows multiple connections from the same identity
+
+conn ikev2-vpn -> defines one tunnel profile
+    auto=add
+    compress=no
+    type=tunnel
+    keyexchange=ikev2 -> we force to use IKEv2
+    fragmentation=yes
+    forceencaps=yes -> forces UDP encapsulation (NAT-T on port 4500), important when there's NAT between the peers, I enable it for future implementation
+
+    # Encryption/integrity proposals -> the cipher proposals. IKE is for the control channel (key exchange), ESP is for the actual data tunnel. The exclamation mark at the end means "only these, no fallback"
+    ike=aes256-sha256-modp2048,aes128-sha256-modp2048!
+    esp=aes256-sha256,aes128-sha256!
+
+    dpdaction=clear
+    dpddelay=300s
+    rekey=no
+
+    # Server (left) side
+    left=%any
+    leftid=@<SERVER_IP_OR_HOSTNAME>
+    leftcert=server-cert.pem
+    leftsendcert=always
+    leftsubnet=0.0.0.0/0
+
+    # Client (right) side
+    right=%any
+    rightid=%any
+    rightauth=eap-mschapv2
+    rightsourceip=10.X.X.X/X    # VPN IP pool for clients
+    rightdns=8.8.8.8,8.8.4.4
+    rightsendcert=never
+
+    eap_identity=%identity
+
+5) we configure the /etc/ipsec.secrets using again the nano text editor: sudo nano /etc/ipsec.secrets
+# RSA private key for server auth
+: RSA "server-key.pem"
+  
+# VPN user credentials (EAP)
+vpnuser : EAP "type whatever password you want"
+
+6) we enable IP Forwarding by editing the sysctl file: sudo nano /etc/sysctl.conf
+
+Uncomment or add:
+
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+
+Apply: sudo sysctl -p
+  
+7) we configure UFW / iptables
+
+If using UFW:
+
+sudo ufw allow 500/udp      # IKE
+sudo ufw allow 4500/udp     # NAT-T
+sudo ufw allow OpenSSH
+
+Also we add NAT rules before the *filter block in /etc/ufw/before.rules:
+
+*nat
+-A POSTROUTING -s 10.X.X.X/X -o <WAN_INTERFACE> -m policy --pol ipsec --dir out -j ACCEPT
+-A POSTROUTING -s 10.X.X.X/X -o <WAN_INTERFACE> -j MASQUERADE
+COMMIT
+
+*mangle
+-A FORWARD --match policy --pol ipsec --dir in -s 10.X.X.X/X -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss 1361:1536 -j TCPMSS --set-mss 1360
+COMMIT
+
+Replace <WAN_INTERFACE> with your actual interface (e.g. ens33, eth0).
+
+Also in /etc/default/ufw set:
+
+DEFAULT_FORWARD_POLICY="ACCEPT"
+
+Then we enable the rules: sudo ufw disable && sudo ufw enable
+
+8) we start & enable StrongSwan using the commands: sudo systemctl enable --now strongswan-starter
+To restart we use the command: sudo systemctl restart strongswan-starter and to verify the status we the command sudo systemctl status strongswan-starter
+
+9) verification commands of IPsec tunnel
+sudo ipsec status         # Check loaded connections
+sudo ipsec statusall      # Full detail
