@@ -123,8 +123,8 @@ conn ikev2-vpn -> defines one tunnel profile
     esp=aes256-sha256,aes128-sha256!
 
     dpdaction=restart -> Dead Peer Detection. If pfSense stops responding, StrongSwan automatically tries to re-establish the tunnel
-    dpddelay=30s -> 
-    dpdtimeout=120s -> timeut time
+    dpddelay=30s -> the time that server waits during idle periods before sending a DPD check packet (an empty IKE Informational request) to the peer
+    dpdtimeout=120s -> total amount of time the server will wait for a response from an uncommunicative peer before declaring it dead
     rekey=yes
 
     # Ubuntu-server side (always local side)
