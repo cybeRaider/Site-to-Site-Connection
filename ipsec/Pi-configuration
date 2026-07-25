@@ -4,7 +4,35 @@ Steps for creation and configuration of the IPsec tunnel
 Then we install StrongSwan using the commands: sudo apt install strongswan strongswan-starter libcharon-extra-plugins libcharon-extauth-plugins -y
 The "libcharon-extra-plugins" adds support for extra auth methods and cipher suites where the "libcharon-extauth-plugins" specifically adds EAP auth support (needed for username/password login)
 
-2) Generation of PKI (self-signed CA and self-sgned cert)
+2) creation of dummy interface 
+
+# load the dummy kernel module
+sudo modprobe dummy
+
+# creation of  dummy interface
+sudo ip link add dummy0 type dummy
+sudo ip addr add 10.X.X.1/24 dev dummy0
+sudo ip link set dummy0 up
+
+# we make it persistent across reboots by creating a systemd-networkd config and apply some commands:
+sudo nano /etc/systemd/network/10-dummy0.netdev
+
+[NetDev]
+Name=dummy0
+Kind=dummy
+
+sudo nano /etc/systemd/network/20-dummy0.network
+[Match]
+Name=dummy0
+
+[Network]
+Address=10.X.X.1/24
+
+# enable the service 
+sudo systemctl enable --now systemd-networkd
+sudo systemctl restart systemd-networkd
+
+3) Generation of PKI (self-signed CA and self-sgned cert)
 This is where we build our own mini Certificate Authority for the VPN. IPsec with IKEv2 relies on certificates to prove identity.
 
 First we need to create directories for our CA, certs, and private keys and then change the permissions so we can have only us permissions and no one else: mkdir -p ~/pki/{ca,certs,private} and then we type chmod 700 ~/pki
@@ -68,13 +96,13 @@ openssl x509 -req -days 1825 \ -> invokes OpenSSL's X.509 certificate handling u
 
 We verify that the cert looks correct: openssl x509 -in ~/pki/certs/server-cert.pem -text -noout | grep -A2 "Subject Alternative\|Extended Key" -> we should see our IP/hostname in the SAN and TLS Web Server Authentication in the EKU.
   
-3) StrongSwan reads from specific directories under /etc/ipsec.d/
+4) StrongSwan reads from specific directories under /etc/ipsec.d/
 
 To install the Certs into StrongSwan we need to copy and paste them on specific folder: sudo cp ~/pki/ca/ca-cert.pem /etc/ipsec.d/cacerts/ 
 sudo cp ~/pki/certs/server-cert.pem /etc/ipsec.d/certs/
 sudo cp ~/pki/private/server-key.pem /etc/ipsec.d/private/ 
 
-4) Tunnel configuration
+5) Tunnel configuration
 
 We configure the file /etc/ipsec.conf using the nano text editor: sudo nano /etc/ipsec.conf
 
@@ -94,35 +122,32 @@ conn ikev2-vpn -> defines one tunnel profile
     ike=aes256-sha256-modp2048,aes128-sha256-modp2048!
     esp=aes256-sha256,aes128-sha256!
 
-    dpdaction=clear
-    dpddelay=300s
-    rekey=no
+    dpdaction=restart
+    dpddelay=30s
+    dpdtimeout=120s
+    rekey=yes
 
-    # Server (left) side
-    left=%any
-    leftid=@<SERVER_IP_OR_HOSTNAME> -> the identity the server presents, must match the cert's CN/SAN
+    # Ubuntu-server side (local)
+    left=192.168.X.X -> IP of the WAN interface
+    leftid=192.168.X.X
     leftcert=server-cert.pem
     leftsendcert=always
-    leftsubnet=0.0.0.0/0
+    leftsubnet=10.X.X.0/24
 
-    # Client (right) side
-    right=%any
-    rightid=%any
-    rightauth=eap-mschapv2 -> clients authenticate with username/password using EAP
-    rightsourceip=10.X.X.X/X    # VPN IP pool for clients
-    rightdns=8.8.8.8,8.8.4.4
-    rightsendcert=never
+    # pfsense side (remote)
+    right=192.168.X.X -> WAN IP
+    rightid=192.168.X.X
+    rightcert=pfsense-cert.pem
+    rightsubnet=192.168.X.0/24
 
-    eap_identity=%identity
-
-5) we configure the /etc/ipsec.secrets using again the nano text editor: sudo nano /etc/ipsec.secrets
+6) we configure the /etc/ipsec.secrets using again the nano text editor: sudo nano /etc/ipsec.secrets
 # RSA private key for server auth
 : RSA "server-key.pem" -> tells StrongSwan to use this private key to prove the server's identity during the IKE handshake
   
 # VPN user credentials (EAP)
 vpnuser : EAP "type whatever password you want" -> the username/password pair that the client will authenticate with
 
-6) we enable IP Forwarding by editing the sysctl file: sudo nano /etc/sysctl.conf
+7) we enable IP Forwarding by editing the sysctl file: sudo nano /etc/sysctl.conf
 
 # By default, Linux drops packets that aren't destined for itself. Since the VPN server needs to forward traffic from VPN clients to the rest of the network (and back), we need to enable this at the kernel level.
 
@@ -134,7 +159,7 @@ net.ipv4.conf.all.send_redirects = 0 -> -> stops the server from emitting outgoi
 
 We apply them using the command: sudo sysctl -p
   
-7) we configure UFW / iptables to open the ports that used for the IPsec
+8) we configure UFW / iptables to open the ports that used for the IPsec
 
 If using UFW:
 
@@ -161,9 +186,9 @@ DEFAULT_FORWARD_POLICY="ACCEPT" -> by default, UFW drops all forwarded traffic (
 
 Then we enable the rules: sudo ufw disable && sudo ufw enable
 
-8) we start & enable StrongSwan using the commands: sudo systemctl enable --now strongswan-starter
+9) we start & enable StrongSwan using the commands: sudo systemctl enable --now strongswan-starter
 To restart we use the command: sudo systemctl restart strongswan-starter and to verify the status we the command sudo systemctl status strongswan-starter
 
-9) verification commands of IPsec tunnel
+10) verification commands of IPsec tunnel
 sudo ipsec status         # Check loaded connections
 sudo ipsec statusall      # Full detail
