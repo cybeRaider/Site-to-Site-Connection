@@ -122,20 +122,20 @@ conn ikev2-vpn -> defines one tunnel profile
     ike=aes256-sha256-modp2048,aes128-sha256-modp2048!
     esp=aes256-sha256,aes128-sha256!
 
-    dpdaction=restart
-    dpddelay=30s
-    dpdtimeout=120s
+    dpdaction=restart -> Dead Peer Detection. If pfSense stops responding, StrongSwan automatically tries to re-establish the tunnel
+    dpddelay=30s -> 
+    dpdtimeout=120s -> timeut time
     rekey=yes
 
-    # Ubuntu-server side (local)
+    # Ubuntu-server side (always local side)
     left=192.168.X.X -> IP of the WAN interface
-    leftid=192.168.X.X
+    leftid=192.168.X.X -> identity presented in the IKE handshake, must match the cert CN/SAN
     leftcert=server-cert.pem
     leftsendcert=always
     leftsubnet=10.X.X.0/24
 
-    # pfsense side (remote)
-    right=192.168.X.X -> WAN IP
+    # pfsense side (always remote side)
+    right=192.168.X.X -> WAN IP of where the strongswan connects to 
     rightid=192.168.X.X
     rightcert=pfsense-cert.pem
     rightsubnet=192.168.X.0/24
