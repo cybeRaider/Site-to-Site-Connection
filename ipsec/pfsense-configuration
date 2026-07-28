@@ -1,0 +1,37 @@
+For the pfsense part the only thing we do is to create the key, CSR, and certificate so we can upload them on pfsense. The commands are:
+
+# pfSense cert config
+cat > ~/pki/pfsense.cnf << EOF
+[req]
+default_bits = 4096
+prompt = no
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+CN = 192.168.1.200
+
+[v3_req]
+subjectAltName = IP:192.168.1.200
+extendedKeyUsage = serverAuth
+keyUsage = digitalSignature, keyEncipherment
+EOF
+
+# Generate new key and CSR
+openssl genrsa -out ~/pki/private/pfsense-key.pem 4096
+
+openssl req -new \
+    -key ~/pki/private/pfsense-key.pem \
+    -out ~/pki/private/pfsense.csr \
+    -config ~/pki/pfsense.cnf
+
+# Sign with CA
+openssl x509 -req -days 1825 \
+    -in ~/pki/private/pfsense.csr \
+    -CA ~/pki/ca/ca-cert.pem \
+    -CAkey ~/pki/private/ca-key.pem \
+    -CAcreateserial \
+    -copy_extensions copy \
+    -out ~/pki/certs/pfsense-cert.pem
+
+Lastly we move into strongSwan folder -> sudo cp ~/pki/certs/pfsense-cert.pem /etc/ipsec.d/certs/
