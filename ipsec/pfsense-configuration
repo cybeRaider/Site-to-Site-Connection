@@ -1,4 +1,4 @@
-For the pfsense part the only thing we do is to create the key, CSR, and certificate so we can upload them on pfsense. The commands are:
+For the pfsense part the only thing we need to do is to create the key, CSR, and certificate so we can upload them on pfsense. I did it on my raspberry Pi. The commands are:
 
 # pfSense cert config
 cat > ~/pki/pfsense.cnf << EOF
@@ -35,3 +35,79 @@ openssl x509 -req -days 1825 \
     -out ~/pki/certs/pfsense-cert.pem
 
 Lastly we move into strongSwan folder -> sudo cp ~/pki/certs/pfsense-cert.pem /etc/ipsec.d/certs/
+
+Now we're going to import the certs of CA and pfsense before configuring Phase 1. To be able to login to pfsense GUI we go to the web-broswer of our choice and we type the WAN IP of pfsense that we configured.
+For importing the CA cert we navigate to System > Cert Manager > CAs > Add
+
+Descriptive Name -> name of our choice
+Method -> import an existing Certificate Authority
+Trust Store -> enabled
+Certificate data -> we copy and paste full contents of cat ~/pki/ca/ca-cert.pem
+
+Then for pfsense: System > Cert Manager > Certificates > Add/Sign
+
+Method -> import an existing Certificate
+Descriptive Name -> name of our choice again
+Certificate data -> paste full contents of cat ~/pki/certs/pfsense-cert.pem
+Private key data -> paste full contents of cat ~/pki/private/pfsense-key.pem
+
+pfSense IPsec — Phase 1 Configuration
+
+Phase 1 establishes the IKE Security Association (IKE SA) which is a secure, mutually authenticated control channel between the two IPsec peers. No data traffic flows through Phase 1 itself. 
+Its sole purpose is to:
+
+- negotiate which cryptographic algorithms both sides will use
+- perform a Diffie-Hellman key exchange to derive a shared secret
+- authenticate both sides using their RSA certificates
+- create a secure encrypted channel inside which Phase 2 is negotiated
+
+Once Phase 1 is established, Phase 2 (the actual data tunnel) is negotiated inside it, protected by the Phase 1 encryption.
+
+To configure we navigate to: VPN > IPsec > Tunnels. We Click + Add P1 to create a new Phase 1 entry.
+
+General Information
+
+Disabled -> unchecked
+Key Exchange version ->	IKEv2 (forces IKEv2 only. IKEv1 is deprecated, has known vulnerabilities, and uses 6 message exchanges vs IKEv2's 2. Never use IKEv1 for new deployments)
+Internet Protocol -> IPv4 (tunnel operates over IPv4)
+Interface -> WAN (pfSense listens for IKE on the WAN interface. This is the interface directly reachable from the Raspberry Pi on the home network)
+Remote Gateway -> 192.168.X.X (IP of the remote IPsec peer which is the Raspberry Pi's home network IP. pfSense connects to (or accepts connections from) this address)
+Description	(whatever we type will appear in Status > IPsec for easy identification)
+
+Phase 1 Proposal (Authentication)
+
+Authentication Method -> Mutual RSA	(both sides prove identity using RSA digital signatures and certificates. Neither side knows the other's private key, identity is proven cryptographically. This is significantly more secure than PSK because each endpoint has its own key pair and the private keys never leave the machine)
+My Identifier -> IP Address → 192.168.X.X (identity of pfSense that presents to StrongSwan during IKE_AUTH. Critical: Must be set to IP Address format, NOT Distinguished Name. Using Distinguished Name format caused no matching peer config found on pfSense during troubleshooting because StrongSwan was presenting a plain IP identity while pfSense was looking for a DN-format match)
+Peer Identifier ->	IP Address → 192.168.X.X (the expected identity of the Raspberry Pi. pfSense uses this to match incoming IKE_SA_INIT packets to this Phase 1 config. Must match leftid=192.168.1.154 in StrongSwan's ipsec.conf)
+My Certificate -> name of pfsense cert (the certificate of pfSense that presents to prove its identity. Import first at System > Cert Manager > Certificates by pasting the contents of pfsense-cert.pem and pfsense-key.pem)
+Peer Certificate Authority -> CA cert name (the CA used to verify the Raspberry Pi's certificate. pfSense checks that the received certificate was signed by this CA. Import at System > Cert Manager > CAs with Trust Store enabled without Trust Store pfSense treats it as a stored cert rather than a trusted root CA.
+
+Phase 1 Proposal (Encryption Algorithm)
+
+These values must exactly match the ike= directive in StrongSwan's ipsec.conf. A single mismatch causes NO_PROPOSAL_CHOSEN and Phase 1 never completes.
+
+
+Encryption Algorithm -> AES	 (Advanced Encryption Standard for IKE control channel encryption)
+Key Length -> 256 bits	(AES-256 provides 256-bit key length. Stronger than AES-128 with negligible performance difference on modern hardware)
+Hash Algorithm -> SHA256 (HMAC-SHA256 for IKE message integrity and authentication. SHA1 is cryptographically broken and must not be used. SHA384/512 are acceptable but unnecessary here)
+DH Group ->	14 (2048 bit) (Diffie-Hellman Group 14 (MODP-2048) for the key exchange. Provides 112-bit equivalent security. Group 14 is the minimum recommended by current standards. Groups 1, 2, and 5 are broken and must not be used)
+Lifetime _>	28800 (IKE SA lifetime in seconds (8 hours). After this the IKE SA is renegotiated. The Phase 2 data tunnel continues without interruption during IKE SA renegotiation)
+
+Matches StrongSwan ipsec.conf: ike=aes256-sha256-modp2048!
+
+Advanced Options
+
+Child SA Start Action -> None (Responder Only)	(prevents pfSense from initiating the tunnel. The Raspberry Pi is the sole initiator (auto=start in ipsec.conf). Without this, both sides attempt to initiate simultaneously by sending IKE_SA_INIT to each other. Each side then waits for the other to respond as a responder while acting as an initiator — the handshake never completes. Setting pfSense to responder-only resolves this collision)
+Child SA Close Action -> Default (standard behaviour when a Phase 2 SA closes)
+NAT Traversal -> Auto (automatically detects NAT between the peers and enables UDP encapsulation on port 4500 if needed. Set to Force when tunneling over the internet through home routers where NAT is guaranteed.
+Dead Peer Detection	-> enabled	(DPD sends liveness checks to the Raspberry Pi. If it stops responding, pfSense tears down the SA so it can be renegotiated cleanly)
+Delay -> 30	(send a DPD check after 30 seconds of inactivity on the tunnel)
+Max failures -> 3 (after 3 consecutive failed DPD checks (90 seconds total), declare the peer dead and clear the SA)
+
+we click save and also we click apply changes at the top of the IPsec page so they can be enabled
+
+verification: after phase 1 establishes, we navigate to status > IPsec and we should see:
+
+ID, Description -> To-RaspberryPi, Local -> 192.168.X.X (WAN IP), Remote -> 192.168.X.X (raspberry Pi IP), Role -> IKEv2, and Status -> established
+
+The algorithms that should be displayed: AES_CBC (256) / HMAC_SHA2_256_128 / PRF_HMAC_SHA2_256 / MODP_2048
