@@ -111,3 +111,58 @@ verification: after phase 1 establishes, we navigate to status > IPsec and we sh
 ID, Description -> To-RaspberryPi, Local -> 192.168.X.X (WAN IP), Remote -> 192.168.X.X (raspberry Pi IP), Role -> IKEv2, and Status -> established
 
 The algorithms that should be displayed: AES_CBC (256) / HMAC_SHA2_256_128 / PRF_HMAC_SHA2_256 / MODP_2048
+
+pfSense IPsec — Phase 2 Configuration
+
+Phase 2 establishes the IPsec Child SA, the actual encrypted data tunnel. It is negotiated inside the secure Phase 1 IKE SA channel. Phase 2 defines three things:
+
+- traffic selectors, which subnets communicate through the tunnel (who)
+- ESP proposals, how the data is encrypted (how)
+- lifetime and PFS, how long keys are valid before rotation (when)
+
+Unlike Phase 1 which creates a single bidirectional SA, Phase 2 installs two unidirectional SAs in the Linux kernel one for inbound ESP traffic and one for outbound. This is visible on the Raspberry Pi via:
+
+After Phase 1 configuration, on the VPN > IPsec > Tunnels page we click "show Phase 2 entries" under the Phase 1 entry, then we click + Add P2
+
+Mode -> Tunnel IPv4	(full tunnel mode where the entire original IP packets are encapsulated inside ESP. The original source/destination IPs are hidden inside the ESP envelope. The other selection is the transport mode (which only encrypts the payload) is for host-to-host VPNs and is not used here)
+Local Network -> LAN Subnet	(pfSense automatically resolves this to 192.168.X.0/24 (the pfSense LAN). Traffic originating from this subnet destined for the remote subnet will be encrypted and sent through the tunnel)
+Remote Network -> Network (10.X.X.0/24 Raspberry Pi's dedicated dummy0 interface subnet. Traffic destined for this subnet is what triggers the tunnel. Must match leftsubnet=10.X.X.0/24 in StrongSwan's ipsec.conf)
+Description
+
+Phase 2 Proposal (SA/Key Exchange). These values must exactly match the "esp=" directive in StrongSwan's ipsec.conf. A mismatch causes Phase 1 to establish but Phase 2 to fail with NO_PROPOSAL_CHOSEN.
+
+Encryption Algorithms -> AES 256 bits (AES-256-CBC encrypts every data packet flowing between the two subnets. The ESP header wraps each original IP packet with this encryption before it leaves the machine)
+Hash Algorithms -> SHA256 (HMAC-SHA256 provides packet integrity and authentication for ESP. Ensures that encrypted packets cannot be tampered with in transit. An attacker who modifies an ESP packet in flight will fail the integrity check and the packet is dropped)
+PFS Key Group -> 14 (2048 bit) (perfect forward secrecy using DH Group 14. PFS performs a fresh Diffie-Hellman key exchange every time Phase 2 is renegotiated. This ensures that even if a session key is somehow compromised in the future, previously recorded encrypted sessions cannot be decrypted retroactively)
+Lifetime ->3600	(Phase 2 SA lifetime in seconds (1 hour). Keys are rotated every hour. Shorter lifetimes increase security by limiting the window of exposure if a key is compromised, at the cost of slightly more renegotiation overhead every hour)
+
+Matches StrongSwan ipsec.conf: esp=aes256-sha256-modp2048!
+
+we also gonna need firewall rules after phase 2 to permit the IKE negotiation traffic and the tunnel data traffic
+
+In WAN Rules we gonna allow IKE key exchange from the Raspberry Pi:
+
+Action -> Pass
+Interface -> WAN
+Protocol -> UDP
+Source -> 192.168.X.X (WAN IP of Pi)
+Destination -> WAN address
+Destination Port -> 500
+Description
+
+In IPsec Interface Rules  we allow tunnel traffic to reach the LAN. Without the IPsec rule, pfSense drops all decrypted tunnel traffic even when the Phase 1 and Phase 2 SAs are fully established:
+
+Action -> Pass
+Interface -> IPsec
+Protocol -> Any
+Source -> 10.X.X.0/24 (dummy interface that I wanted to communciate with LAN through IPsec)
+Destination -> 192.168.X.0/24 
+Description
+
+for verification on pfsense we go pfSense — Status > IPsec, where on Pi we use the commands "sudo ipsec statusall". After we see that the tunnel is up we can execute ping to validate that each node can reach the other.
+
+To confirm that the traffic is ESP-encrypted (run while pinging above) we use the command "sudo tcpdump -i eth0 esp -n"
+
+tcpdump	is the native Linux command-line packet analyzer utility.
+the -i eth0	flag specifies the target network interface to monitor, the "esp" applies a protocol filter for encapsulating security payload (IP protocol 50), isolating IPsec-encrypted VPN traffic from other network protocols
+the -n	flag disables DNS name resolution. IP addresses are displayed numerically rather than being resolved to domain names, improving performance and avoiding unnecessary DNS traffic
