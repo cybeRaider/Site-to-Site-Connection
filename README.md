@@ -17,7 +17,7 @@ This repository documents the architecture and implementation of a secure, segme
 To mirror enterprise best practices, the Ubuntu Server utilizes a dedicated virtual loopback/dummy interface ("dummy0"). This ensures that home network traffic remains fully isolated and only explicit, segmented traffic passes through the encrypted tunnel.
 
 Raspberry Pi (Ubuntu server) -> eth0 (Lab WAN: 192.168.X.X)
-  - dummy interface -> (10.X.X.X)                   
+  - dummy interface -> (10.20.X.X)                   
   
 pfSense Firewall -> [WAN Interface: 192.168.X.X], [DMZ Interface: 172.16.X.X], [LAN Subnet: 192.168.X.X] 
   
@@ -34,7 +34,7 @@ A dedicated Certificate Authority was created using OpenSSL to issue and sign ce
 
 ## Key Implementation details 
 
-Virtual (Dummy) Interface -> Instead of advertising the entire home network through the tunnel, a dedicated virtual interface (dummy0) was created with a isolated subnet. This cleanly separates tunnel traffic from home network traffic and accurately reflects how production environments segment VPN traffic from other interfaces.
+Virtual (Dummy) Interface -> Instead of advertising the entire home network through the tunnel, a dedicated virtual interface (dummy0) was created with an isolated subnet. This cleanly separates tunnel traffic from home network traffic and accurately reflects how production environments segment VPN traffic from other interfaces.
 
 Split Tunnel Design -> the tunnel is configured as a split tunnel by design. Only traffic between dummy subnet and LAN subnet is encrypted and routed through the IPsec SA. All other traffic (internet, home LAN) continues normally through eth0 without touching the tunnel.
 
