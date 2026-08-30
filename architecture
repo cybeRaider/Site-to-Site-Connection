@@ -48,4 +48,4 @@ Raspberry Pi -> role: External node on home LAN represents a device outside pfSe
 
 Monitoring: ICMP only (Zabbix agent not available for ARM64 on Ubuntu 24.04)
 
-The Pi sits outside pfSense on the home network, which means monitoring it requires traffic to traverse pfSense WAN. This tests whether pfSense is correctly port forwarding inbound connections and makes the external LAN zone visible in the monitoring system.
+The Pi sits outside pfSense on the home network, which means monitoring requires traffic to traverse pfSense WAN. This tests whether pfSense is correctly port forwarding inbound connections and makes the external LAN zone visible in the monitoring system.
