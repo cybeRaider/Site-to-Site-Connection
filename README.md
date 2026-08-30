@@ -3,10 +3,10 @@
 ## Overview
 This repository documents the architecture and implementation of a secure, segmented Site-to-Site IKEv2 IPsec VPN tunnel established between an Ubuntu Server 24.04 endpoint that is etsablsihed on Raspberry Pi (running StrongSwan) and a pfSense Firewall appliance running as a Type-2 VM on VMware. The tunnel uses IKEv2 with mutual RSA certificate authentication, providing encrypted communication between two dedicated subnets without the use of Pre-Shared Keys (PSK).
 
-<img width="1320" height="357" alt="netork-topology" src="https://github.com/user-attachments/assets/92a6eba5-b571-4986-aa5c-621d12f387bd" />
+<img width="1617" height="437" alt="netork-topology" src="https://github.com/user-attachments/assets/f52a1145-1724-4778-b172-71db35535c66" />
 
 ## Core Technologies & Tools
-- Operating Systems: Ubuntu Server 24.04 LTS, pfSense CE, Ubuntu Desktop (LAN Client)
+- Operating Systems: Ubuntu Server 24.04 LTS, pfSense CE, Ubuntu Desktop (LAN Client), Windows Server 2025
 - Hypervisor: VMware (Type-2 Hypervisor environment)
 - VPN Daemon: StrongSwan (Charon IKE daemon).
 - Security & Encryption: OpenSSL (Custom CA & Certificate Generation), IKEv2, Mutual RSA, AES-256-GCM / SHA256.
