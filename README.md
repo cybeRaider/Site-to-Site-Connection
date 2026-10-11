@@ -1,9 +1,9 @@
 # Enterprise-Grade Site-to-Site IKEv2 IPsec VPN & Monitoring Lab
 
 ## Overview
-This repository documents the architecture and implementation of a secure, segmented Site-to-Site IKEv2 IPsec VPN tunnel established between an Ubuntu Server 24.04 endpoint that is etsablsihed on Raspberry Pi (running StrongSwan) and a pfSense Firewall appliance running as a Type-2 VM on VMware. The tunnel uses IKEv2 with mutual RSA certificate authentication, providing encrypted communication between two dedicated subnets without the use of Pre-Shared Keys (PSK).
+This repository documents the architecture and implementation of a secure, segmented Site-to-Site IKEv2 IPsec VPN tunnel established between an Ubuntu Server 24.04 endpoint that is established on Raspberry Pi (running StrongSwan) and a pfSense Firewall appliance running as a Type-2 VM on VMware. The tunnel uses IKEv2 with mutual RSA certificate authentication, providing encrypted communication between two dedicated subnets without the use of Pre-Shared Keys (PSK). Furthermore, there is also a dedicated L2L connection between my coworker DMZ network with my DMZ network.
 
-<img width="1617" height="437" alt="netork-topology" src="https://github.com/user-attachments/assets/f52a1145-1724-4778-b172-71db35535c66" />
+<img width="1420" height="526" alt="image_2026-10-11_142522323" src="https://github.com/user-attachments/assets/57f6c504-9b79-4132-a3b6-2637a06eff69" />
 
 ## Core Technologies & Tools
 - Operating Systems: Ubuntu Server 24.04 LTS, pfSense CE, Ubuntu Desktop (LAN Client), Windows Server 2025
@@ -14,14 +14,14 @@ This repository documents the architecture and implementation of a secure, segme
 
 ## Network Architecture & Topology
 
-To mirror enterprise best practices, the Ubuntu Server utilizes a dedicated virtual loopback/dummy interface ("dummy0"). This ensures that home network traffic remains fully isolated and only explicit, segmented traffic passes through the encrypted tunnel.
+To mirror enterprise best practices, the Ubuntu Server in my raspberry Pi utilizes a dedicated virtual loopback/dummy interface ("dummy0"). This ensures that home network traffic remains fully isolated and only explicit, segmented traffic passes through the encrypted tunnel.
 
 Raspberry Pi (Ubuntu server) -> eth0 (Lab WAN: 192.168.X.X)
   - dummy interface -> (10.20.X.X)                   
   
 pfSense Firewall -> [WAN Interface: 192.168.X.X], [DMZ Interface: 172.16.X.X], [LAN Subnet: 192.168.X.X] 
   
-IPsec Tunnel (IKEv2 + Mutual RSA):
+IPsec Tunnel (IKEv2 + Mutual RSA) between Pi and pfsense:
 10.20.20.0/24 <══════════════════> 192.168.50.0/24                                                        
 
 ## PKI Architecture
