@@ -1,0 +1,129 @@
+Firewall configureation
+
+WAN rule
+
+- IKE from coworker: action is set to Pass,	specify UDP protocol, for source is the public of my coworker, for destination IP we se set the IP of pfsense WAN interface, and for port we specify the 500
+- NAT-T from coworker: action is set to Pass,	specify UDP protocol, for source is the public of my coworker, for destination IP we se set the IP of pfsense WAN interface, and for port we specify the 4500
+
+Note: 
+We need the Public IP in the L2L connection between my coworker because the two pfSense firewalls are at completely different physical locations separated by the public internet where in the previous Raspberry Pi tunnel, both endpoints were on the same home network with direct layer-2 reachability. No routing across the internet was needed. Below there're some reasons of why we need the public IP's for this connection:
+  - Private IPs are not routable across the internet and each site's home router performs NAT, replacing the private source IP with the public IP on all outbound packets
+  - we also need Port forwarding on each home router to directs inbound IKE/NAT-T traffic to the correct pfSense WAN interface
+
+NAT-T (NAT Traversal) is a mechanism that allows IPsec to work through NAT devices such as home routers
+
+IPsec rule that allow decrypted tunnel traffic to reach our DMZ
+
+- allow coworker DMZ through tunnel: action is set to pass, protocol is set to any, source IP is set to coworker DMZ subnet,	destination IP is set to our DMZ subnet
+
+Note: we apply this rule because pfSense drops all traffic by default even after it has been decrypted from the tunnel. This rule explicitly permits the decrypted traffic to flow from the IPsec virtual interface to the DMZ interface.
+
+DMZ rules to allow our DMZ servers to send traffic into the tunnel
+
+allow our DMZ to coworker DMZ: action is set to pass, protocol is set to any, source IP is set to our DMZ subnet,	destination IP is set to coworker DMZ subnet
+
+Port forward in home router
+
+Protocol	External Port	  Forward To	 Internal Port	 Purpose
+UDP	       500	         pfsense WAN IP	    500	       IKE key exchange
+UDP	       4500	         pfsense WAN IP	    4500	     NAT-T ESP encapsulation
+
+UDP 500 is for IKE (Internet Key Exchange) and uses this for the initial negotiation between peers. Phase 1 and Phase 2 are negotiated here.
+UDP 4500 is for NAT-T and uses this to encapsulate ESP packets in UDP so they can pass through NAT. Once NAT is detected, IKE also migrates to port 4500.
+
+PKI generation in each pfsense
+
+Each site creates its own CA and endpoint certificate independently. The certificates use the public IP as the CN and SAN because that is the identity each side presents across the internet.
+On your pfSense — System > Cert Manager > CAs > Add:
+
+Descriptive Name -> give a specific name
+Method -> Create an internal Certificate Authority
+Key type -> RSA
+Key length -> 4096
+Digest Algorithm -> sha256
+Lifetime -> 3650 days 
+Common Name	-> give a specific name
+
+Note: longer key provides stronger long-term security. If someone records encrypted traffic now and the CA key is compromised years later, they could potentially decrypt it. 4096-bit makes this computationally infeasible for the foreseeable future.
+
+Create the pfSense endpoint certificate — System > Cert Manager > Certificates > Add/Sign:
+
+Method -> Create an internal Certificate
+Descriptive Name -> give a specific name
+Certificate Authority -> name of the cert from the CA that we created above
+Key type -> RSA
+Key length -> 4096
+Digest Algorithm -> sha256
+Lifetime -> 1825 days 
+Common Name -> your public IP
+Alternative Names	IP -> your public IP
+Certificate Type -> Server Certificate
+
+We put the public IP as CN and SAN  because during IKE_AUTH each pfSense presents its certificate and the remote peer verifies that the certificate's SAN matches the IP it connected to. 
+Since the connection is established between public IPs, the SAN must contain the public IP. A mismatch results in AUTH_FAILED. Coworker's pfSense follows the same process with their values.
+
+Now each site exports their CA certificate and sends it to the other. To export on our pfSense we go to System > Cert Manager > CAs > click Export CA next to the recently created CA cert and send the downloaded .crt file to my coworker.
+To import coworker's CA on our pfSense we navigate to System > Cert Manager > CAs > Add:
+
+Descriptive Name -> give specific name
+Method -> Import an existing Certificate Authority
+Trust Store -> enabled
+Certificate data -> paste coworker's CA cert content
+
+Note: Without Trust Store enabled pfSense stores the certificate but does not register it as a trusted root CA. 
+This means pfSense cannot verify certificates signed by that CA during IKE_AUTH, resulting in AUTH_FAILED even if the certificate itself is valid.
+
+Now we'll configure Phase 1 on our pfsense by navigate to VPN > IPsec > Tunnels > Add P1:
+
+Key Exchange version -> IKEv2	(IKEv1 is deprecated)
+Internet Protocol	-> IPv4
+Interface	-> WAN (listen on WAN interface facing the internet)
+Remote Gateway ->	Coworker's public IP that is the tunnel endpoint
+Description
+
+Authentication:
+
+Authentication Method	-> Mutual RSA	(both sides authenticate with certificates)
+My Identifier	IP Address ->	our public IP that matches your cert SAN
+Peer Identifier	IP Address -> coworker's public IP that matches their cert SAN
+My Certificate -> the server certificate that signed by our CA
+Peer Certificate Authority -> coworker CA that used to verify coworker's certificate
+
+Note: we use IP Address identifier format and not Distinguished Name because during testing with the Raspberry Pi tunnel I discovered that using Distinguished Name format (CN=x.x.x.x) caused pfSense to return "no matching peer config found" because StrongSwan presents a plain IP identity. 
+IP Address format matches correctly on both implementations.
+
+Encryption:
+
+Encryption Algorithm -> AES 256 bits and AES-256-CBC for IKE control channel
+Hash Algorithm -> SHA256 and HMAC-SHA256 for message integrity
+DH Group -> 14 (2048 bit)	Diffie-Hellman Group 14 for key exchange
+Lifetime -> 28800	before IKE SA renegotiation
+
+Advanced:
+
+Child SA Start Action	-> none (Responder Only) because our side waits and coworker initiates
+NAT Traversal	-> force (both behind NAT so always use UDP 4500)
+Dead Peer Detection	-> enabled
+Delay -> 30	DPD check every 30 seconds
+Max failures -> 3	declare dead after 3 failures
+
+Note: we change to Force NAT-T instead of auto because auto would detect NAT during IKE_SA_INIT by comparing the source IP in the UDP header with the IP inside the IKE payload. 
+If they differ NAT is detected. However forcing it is more reliable and avoids edge cases where auto-detection fails.
+
+Phase 2 configuration by navigating to VPN > IPsec > Show Phase 2 Entries > Add P2:
+
+Mode -> tunnel IPv4	(full tunnel entire packets encapsulated in ESP)
+Local Network	Network -> our DMZ subnet
+Remote Network	Network -> coworker's DMZ subnet
+Description
+
+Proposal:
+
+Encryption -> AES 256 bits and AES-256-CBC
+Hash -> SHA256 and HMAC-SHA256 for packet integrity
+PFS Group	-> 14 (2048 bit) that used for fresh key per renegotiation
+Lifetime -> 3600 before Phase 2 key rotation
+
+Architecture explanation
+
+Each site generates its own independent Certificate Authority. Neither site shares a common CA or private key material. Trust is established by each site importing the other's CA certificate.
